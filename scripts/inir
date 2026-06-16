@@ -1306,21 +1306,13 @@ _get_systemd_user_env() {
 
 apply_gpu_policy() {
     # Pin Qt/Mesa to the iGPU on hybrid laptops so the dGPU can stay in
-    # runtime PM suspend.  Coupled to resources.monitorGpu (Settings UI):
-    # only fires when the user disabled GPU monitoring.  See #106, #136.
+    # runtime PM suspend.  Qt Quick's Vulkan/OpenGL backend enumerates all GPUs
+    # at startup — without these env vars, Mesa opens the dGPU during ICD
+    # enumeration and prevents runtime PM suspend regardless of ResourceUsage
+    # polling.  This is orthogonal to resources.monitorGpu (which controls only
+    # GPU stat polling in ResourceUsage.qml).  See #106, #136.
     # Hard opt-out: INIR_GPU_FORCE_DEFAULT=1.
     [[ "${INIR_GPU_FORCE_DEFAULT:-0}" == "1" ]] && return
-
-    local monitor_gpu="true"
-    if command -v jq >/dev/null 2>&1; then
-        local _gpu_cfg
-        _gpu_cfg="$(inir_config_file 2>/dev/null)"
-        if [[ -n "$_gpu_cfg" && -f "$_gpu_cfg" ]]; then
-            monitor_gpu="$(jq -r '.resources.monitorGpu // true' "$_gpu_cfg" 2>/dev/null || true)"
-            [[ -z "$monitor_gpu" ]] && monitor_gpu="true"
-        fi
-    fi
-    [[ "$monitor_gpu" == "true" ]] && return
 
     # Hybrid detection via DRM boot_vga (1=iGPU primary, 0=dGPU secondary).
     local igpu_pci="" has_dgpu=""
