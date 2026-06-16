@@ -9,6 +9,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Services.Mpris
+import Quickshell.Services.Pipewire
 import Quickshell.Io
 import Quickshell.Wayland
 
@@ -38,7 +39,33 @@ Item {
     // Volume popup
     property bool volumePopupVisible: false
     property real volumePopupValue: Math.max(0, Math.min(1, MprisController.getVolume()))
-    
+
+    // PipeWire stream fallback: players without MPRIS volume support (browser
+    // MPRIS bridges, some Electron apps) still have an audio stream whose
+    // volume we can drive directly.
+    readonly property var playerStreamNode: {
+        const p = root.activePlayer
+        if (!p) return null
+        const id = (p.identity ?? "").toLowerCase()
+        const entry = (p.desktopEntry ?? "").toLowerCase()
+        if (!id && !entry) return null
+        return Audio.outputAppNodes.find(n => {
+            const an = ((n.properties?.["application.name"] ?? n.name) ?? "").toLowerCase()
+            if (!an) return false
+            return (id && (an.includes(id) || id.includes(an)))
+                || (entry && (an.includes(entry) || entry.includes(an)))
+        }) ?? null
+    }
+    PwObjectTracker { objects: root.playerStreamNode ? [root.playerStreamNode] : [] }
+
+    // Track switch can swap the active player object; a stale popup value
+    // would then be applied to the new player on the next wheel tick.
+    onActivePlayerChanged: {
+        volumePopupVisible = false
+        volumePopupValue = Math.max(0, Math.min(1, MprisController.getVolume()))
+    }
+
+
     // Bar-anchored media popup
     property bool barMediaPopupVisible: false
     
@@ -212,14 +239,18 @@ Item {
             }
         }
         onWheel: (event) => {
-            if (!MprisController.canChangeVolume) return
+            const mprisOk = MprisController.canChangeVolume
+            const node = root.playerStreamNode
+            const streamOk = !mprisOk && node?.audio
+            if (!mprisOk && !streamOk) return
             const step = 0.05
             const current = root.volumePopupVisible
                 ? root.volumePopupValue
-                : Math.max(0, Math.min(1, MprisController.getVolume()))
+                : Math.max(0, Math.min(1, mprisOk ? MprisController.getVolume() : node.audio.volume))
             if (event.angleDelta.y > 0) root.volumePopupValue = Math.min(1, current + step)
             else if (event.angleDelta.y < 0) root.volumePopupValue = Math.max(0, current - step)
-            MprisController.setVolume(root.volumePopupValue)
+            if (mprisOk) MprisController.setVolume(root.volumePopupValue)
+            else node.audio.volume = root.volumePopupValue
             volumePopupVisible = true
             hideTimer.restart()
         }
@@ -259,18 +290,127 @@ Item {
             }
         }
 
-        StyledText {
+        Item {
+            id: titleScroller
             visible: Config.options?.bar?.verbose ?? true
-            width: rowLayout.width - (CircularProgress.size + rowLayout.spacing * 2)
             Layout.alignment: Qt.AlignVCenter
             Layout.fillWidth: true
             Layout.rightMargin: rowLayout.spacing
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-            color: Appearance.inirEverywhere ? Appearance.inir.colText
-                : Appearance.auroraEverywhere ? Appearance.colors.colOnLayer0
-                : Appearance.colors.colOnLayer1
-            text: `${cleanedTitle}${activePlayer?.trackArtist ? ' • ' + activePlayer.trackArtist : ''}`
+            implicitWidth: titleText.implicitWidth
+            implicitHeight: titleText.implicitHeight
+            clip: true
+
+            readonly property string fullText: `${cleanedTitle}${activePlayer?.trackArtist ? ' • ' + activePlayer.trackArtist : ''}`
+            readonly property bool overflowing: titleText.implicitWidth > width + 1
+            // Continuous wraparound: scroll one text width + gap, then loop. The
+            // trailing copy enters from the right exactly as the first exits left,
+            // so it reads as a single seamless ribbon with no fade-snap.
+            readonly property real gap: 40
+            readonly property real loopDistance: titleText.implicitWidth + gap
+
+            Row {
+                id: marqueeRow
+                height: parent.height
+                spacing: titleScroller.gap
+                x: 0
+
+                StyledText {
+                    id: titleText
+                    height: marqueeRow.height
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: titleScroller.overflowing ? Text.AlignLeft : Text.AlignHCenter
+                    width: titleScroller.overflowing ? implicitWidth : titleScroller.width
+                    elide: Text.ElideNone
+                    color: Appearance.inirEverywhere ? Appearance.inir.colText
+                        : Appearance.auroraEverywhere ? Appearance.colors.colOnLayer0
+                        : Appearance.colors.colOnLayer1
+                    text: titleScroller.fullText
+                    onTextChanged: {
+                        if (!titleScroller.overflowing) marqueeRow.x = 0
+                        if (!titleScroller._marqueeHovered && titleScroller.overflowing && Appearance.animationsEnabled) {
+                            scrollAnim.stop()
+                            titleScroller._marqueeHolding = true
+                            titleScroller._startHoldTimer()
+                        }
+                    }
+                }
+
+                // Trailing copy — only present while scrolling, enters from the right.
+                StyledText {
+                    height: marqueeRow.height
+                    verticalAlignment: Text.AlignVCenter
+                    visible: titleScroller.overflowing
+                    elide: Text.ElideNone
+                    color: titleText.color
+                    font: titleText.font
+                    text: titleScroller.fullText
+                }
+            }
+
+            // Pausable marquee: hold at start, then glide left continuously.
+            // Hover pauses mid-scroll; on exit it resumes from the paused position.
+            property bool _marqueeHolding: true
+            property bool _marqueeHovered: false
+
+            function _startHoldTimer() {
+                if (!titleScroller.overflowing || !Appearance.animationsEnabled || _marqueeHovered) return
+                holdTimer.start()
+            }
+
+            Timer {
+                id: holdTimer
+                interval: 1800
+                onTriggered: {
+                    titleScroller._marqueeHolding = false
+                    marqueeRow.x = 0
+                    scrollAnim.start()
+                }
+            }
+
+            NumberAnimation {
+                id: scrollAnim
+                target: marqueeRow; property: "x"
+                from: 0
+                to: -titleScroller.loopDistance
+                duration: Math.max(3500, titleScroller.loopDistance * 42)
+                easing.type: Easing.Linear
+                paused: titleScroller._marqueeHovered
+                onFinished: {
+                    marqueeRow.x = 0
+                    titleScroller._marqueeHolding = true
+                    titleScroller._startHoldTimer()
+                }
+            }
+
+            // Kick off on geometry/overflow changes
+            onOverflowingChanged: {
+                if (!overflowing) {
+                    marqueeRow.x = 0
+                    scrollAnim.stop()
+                    titleScroller._marqueeHolding = true
+                } else if (!_marqueeHovered) {
+                    scrollAnim.stop()
+                    titleScroller._marqueeHolding = true
+                    _startHoldTimer()
+                }
+            }
+
+            HoverHandler {
+                id: titleHoverHandler
+                onHoveredChanged: {
+                    titleScroller._marqueeHovered = hovered
+                    if (hovered) {
+                        holdTimer.stop()
+                    } else {
+                        if (titleScroller.overflowing && Appearance.animationsEnabled) {
+                            if (titleScroller._marqueeHolding) {
+                                _startHoldTimer()
+                            }
+                            // NumberAnimation.paused is already false, so it resumes
+                        }
+                    }
+                }
+            }
         }
 
     }

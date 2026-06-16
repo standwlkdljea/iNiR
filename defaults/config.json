@@ -181,6 +181,7 @@
             "enable": false
         },
         "wallpaperTheming": {
+            "autoDarkLightMode": false,
             "enableAppsAndShell": true,
             "enableQtApps": true,
             "enableTerminal": true,
@@ -385,7 +386,7 @@
                 "enable": true,
                 "pauseOnGameMode": true,
                 "pauseOnFullscreen": true,
-                "pauseWhenWindowsPresent": true,
+                "pauseWhenWindowsPresent": false,
                 "showPausedEffect": true
             },
             "clock": {
@@ -633,18 +634,8 @@
         "bottom": false,
         "cornerStyle": 1,
         "customRounding": -1,
-        "edgeModulesLayout": {
-            "leftOrder": [
-                "leftSidebarButton",
-                "activeWindow"
-            ],
-            "rightOrder": [
-                "rightSidebarButton",
-                "sysTray",
-                "weather"
-            ]
-        },
         "floatStyleShadow": true,
+        "height": 40,
         "indicators": {
             "notifications": {
                 "showUnreadCount": true
@@ -664,23 +655,35 @@
             "weather": true,
             "workspaces": true
         },
-        "modulesLayout": {
-            "order": [
-                "media",
+        "opacity": 1.0,
+        "layout": {
+            "left": [
+                "leftSidebarButton",
+                "activeWindow"
+            ],
+            "centerLeft": [
                 "resources",
-                "utilButtons",
-                "workspaces",
+                "media"
+            ],
+            "center": [
+                "workspaces"
+            ],
+            "centerRight": [
                 "clock",
+                "utilButtons",
                 "battery"
-            ]
-        },
-        "modulesPlacement": {
-            "battery": "end",
-            "clock": "start",
-            "media": "start",
-            "resources": "center",
-            "utilButtons": "start",
-            "workspaces": "center"
+            ],
+            "right": [
+                "rightSidebarButton",
+                "tray",
+                "timer",
+                "shellUpdate",
+                "spacer",
+                "weather"
+            ],
+            "spacerWidth": 0,
+            "spacerMode": "auto",
+            "migrated": true
         },
         "resources": {
             "showMemoryIndicator": true,
@@ -959,6 +962,8 @@
     },
     "overview": {
         "activeScreenOnly": false,
+        "allAppsGrid": false,
+        "allAppsGridMode": "minimal",
         "backgroundBlurEnable": true,
         "backgroundBlurRadius": 50,
         "backgroundDim": 40,
@@ -1008,6 +1013,10 @@
             "selectionPadding": 5,
             "showLabel": false,
             "windows": true
+        },
+        "annotation": {
+            "useSatty": false,
+            "useNativeEditor": true
         }
     },
     "resources": {
@@ -1119,8 +1128,15 @@
                 "notepad",
                 "calculator",
                 "sysmon",
-                "timer"
+                "weather",
+                "timer",
+                "screentime"
             ]
+        },
+        "screenTime": {
+            "enable": false,
+            "pollIntervalSeconds": 5,
+            "retentionDays": 30
         },
         "translator": {
             "delay": 300,
@@ -1210,6 +1226,7 @@
             "controls": true,
             "status": true,
             "crypto": false,
+            "worldClock": true,
             "widgetOrder": [
                 "media",
                 "week",
@@ -1218,7 +1235,8 @@
                 "status",
                 "note",
                 "launch",
-                "crypto"
+                "crypto",
+                "worldclock"
             ],
             "spacing": 8,
             "crypto_settings": {
@@ -1227,6 +1245,13 @@
                     "bitcoin",
                     "ethereum"
                 ]
+            },
+            "worldClock_settings": {
+                "timezones": [],
+                "showSeconds": false,
+                "use24Hour": true,
+                "showDate": true,
+                "highlightLocal": true
             },
             "glance": {
                 "showVolume": true,

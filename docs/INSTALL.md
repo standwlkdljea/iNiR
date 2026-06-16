@@ -1,6 +1,8 @@
 # Installation
 
-> **Arch Linux only.** The installer only supports Arch-based distros. If you're on something else, you're on your own - check the manual section below and figure out the equivalent packages for your distro. No support provided, no complaints accepted.
+> **Arch Linux only.** The installer only supports Arch-based distros. If you're on something else, you're on your own - check the manual section below and figure out the equivalent packages for your distro.
+>
+> **NixOS:** there is an experimental flake path. See [NixOS](NIXOS.md).
 
 ---
 
@@ -48,6 +50,7 @@ The bare minimum to not crash immediately:
 | `pipewire` + `wireplumber` | Audio. |
 | `grim` + `slurp` | Screenshots. |
 | `materialyoucolor` | Material You colors from wallpaper (Python, installed via venv). |
+| `plasma-browser-integration` | Browser MPRIS sessions, controls, and artwork. |
 | `plasma-integration` | KDE platform theme plugin (reads kdeglobals for Qt app colors). |
 | `darkly-bin` (AUR) | Darkly Qt style (Material You widget rendering). |
 
@@ -85,7 +88,8 @@ This gives you:
 
 ```bash
 inir service install
-systemctl --user enable --now inir.service
+inir service enable
+inir service start
 ```
 
 ### 5. Restart Niri

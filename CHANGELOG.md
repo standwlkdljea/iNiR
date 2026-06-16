@@ -5,6 +5,95 @@ All notable changes to iNiR will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.0] - 2026-06-11
+
+Screenshots grew a native annotation editor, the AI chat got a real model picker, the overview learned to be an app grid, and browser media finally shows up in the players list.
+
+### Added
+- **Native annotation editor**: the screenshot Edit action opens an in-shell QML editor instead of shelling out to swappy/satty (which remain available as a fallback toggle).
+- **Smart flexible spacers**: `bar.layout.spacerMode` — smart (elastic on the edges, fixed gap inside centre pills), always elastic, or fixed width. Configurable from Settings next to the spacer width.
+- **Unified snip menu** on `Ctrl+Shift+S`: copy, edit, search, OCR, and record from one surface. Migration 030 updates the keybind.
+- **All-apps grid in the overview**: optional replacement for workspace previews — a scrollable grid of every installed app, alphabetical or grouped by category.
+- **Searchable AI model picker**: the model pill in the AI chat morphs open into a searchable, provider-grouped list with key/local indicators, plus provider presets.
+- **Detailed weather forecast panel** in both panel families.
+- **Browser MPRIS via plasma-browser-integration**: browser tabs show up as media players. Migration 029 wires it up.
+- **Opt-in auto light/dark** scheme from wallpaper brightness.
+- **Background vignette and bar effects** rendered over the workspace.
+- **Experimental NixOS support** (flake), plus assorted settings fixes that rode along.
+
+### Changed
+- Settings navigation category headers use the accent color with animated transitions instead of divider lines.
+- `make install` rewrites the systemd cleanup path, and repo-linked installs protect the systemd unit from local rewrites.
+
+### Fixed
+- App launcher desktop entry execution.
+- OSD now shows on all selected outputs, not just one.
+- Dock kept showing a pinned app as running (indicator + preview) after its last window closed, until an unrelated focus change. Window state is now published reactively per app.
+- AI model picker popup rendered without a background (it was stacked under the empty-state placeholder) and could overflow the sidebar edge.
+- GTK3 apps were partially unthemed: the generated gtk.css used `!important`, which the GTK3 CSS parser rejects declaration by declaration.
+- Media player popups flashed (full delegate recreation) on every track change.
+- Bar media scroll now also drives the player's PipeWire stream volume when the player has no MPRIS volume support, and no longer applies a stale value after the active player changes.
+- NixOS/Home Manager flake modules failed evaluation (options merged via mkMerge); `homeManagerModules` alias added.
+- Clipboard selected-item text stays readable on any palette.
+- Theme apply no longer leaves a resident Chrome process behind.
+- CustomIcon no longer tries to load empty sources.
+- Annotation editor export.
+
+## [2.26.0] - 2026-06-05
+
+Release with the new bar layout, Screen Time, World Clock, the settings polish pass, better diagnostics, and a pile of fixes that should have been boring but weren't.
+
+### Added
+- **Modular bar layout**: five zones (`left`, `centerLeft`, `center`, `centerRight`, `right`) with a drag editor in Settings. Existing users keep the classic layout unless they change it. Migration 028 is intentionally disabled, because rewriting user bars during update is how desktops become modern art.
+- **Screen Time**: optional app usage tracking in the right sidebar and waffle Action Center. Includes daily totals, 3/14 day ranges, hourly charts, and per-app drill-down for each hour.
+- **World Clock widget**: sidebar-left widget with live IANA timezones, local highlighting, seconds/date toggles, and Settings UI for add/remove/reorder.
+- **Bar media marquee**: long track titles scroll smoothly, pause on hover, and resume when the cursor leaves.
+- **Wallpaper shuffle controls**: Settings can enable automatic wallpaper shuffle, interval, optional folder, and whether colors regenerate on each shuffle.
+- **`inir logs --debug`** and better `inir logs --full` handling for when normal logs are being shy.
+- **Settings navigation IPC**: `settingsNav` can jump to a page, report current page, or return page count.
+- **Local doc/code verifier**: `scripts/verify-docs.sh` checks public docs against IPC/service/config facts so the wiki stops drifting into folklore.
+- **Filled speaker icons** for volume states.
+
+### Changed
+- Settings got the full polish pass: denser pages, compact rows, tighter headers, subtle groups, compact chips, a responsive card layout, Ctrl+F search focus, faster collapse, less preload cost, and category/nav motion that no longer feels half-asleep.
+- Bar geometry is configurable: height, opacity, modular order, taskbar placement, and safer active-window sizing.
+- Motion/style tokens are more consistent across the shell: physical Class-B motion, centralized hover colors, snappier press feedback, cleaner aurora hover fills, and less random one-off animation sludge.
+- Dock/taskbar window tracking is stricter on Niri. Stale Wayland handles are dropped instead of keeping closed apps around like bad memories.
+- App icon resolution now preserves app branding for Cursor, Windsurf, Vesktop, Electron apps, and absolute icon paths.
+- Right sidebar compact mode now includes Screen Time when the feature is enabled.
+- Right sidebar and BottomWidgetGroup stay loaded across open/close so reopening stops feeling like waking a laptop from 2009.
+- Notepad tabs persist across restarts and tab switches.
+- Widget power logic stops pausing desktop widgets for every random window.
+- Setup/dist paths keep Millennium opt-in instead of dragging it in by default.
+- Niri defaults stop using the legacy shell spawn-at-startup path.
+- Docs and wiki pages were refreshed for modules, config keys, services, IPC, setup, panel families, wallpaper, and release notes.
+
+### Fixed
+- Disabled bar layout migration 028 so updates do not delete old layout keys or rewrite existing user config.
+- Fixed Screen Time persistence and hourly attribution when a tick crosses an hour boundary.
+- Fixed Screen Time showing in sidebar layouts while tracking was disabled.
+- Fixed notification layout/polish loops and clipboard copying in ii notification popups.
+- Fixed bar active-window titles resizing center modules.
+- Fixed bar spacing between network and bluetooth indicators.
+- Fixed bar taskbar height/focused-state alignment.
+- Fixed dock previews and taskbar previews using `file://` icon paths correctly.
+- Fixed dock item open/close transitions for different orientations.
+- Fixed dock preview closing/focus indicators when apps close.
+- Fixed SongRec discarding successful recognition results from newer compact JSON output.
+- Fixed doctor/ABI rebuild paths that could hang or leave vague advice.
+- Fixed BottomWidgetGroup and compact sidebar preload/height issues.
+- Fixed media popup placeholder binding loop.
+- Fixed media popup shadow radius matching the target shape.
+- Fixed waffle clipboard double-loading and notification hover propagation.
+- Fixed Waffle CalendarWidget radius to use the shared Looks token.
+- Fixed boot-time theme, icon, and power-profile application when config is not fully ready yet.
+- Fixed AppSearch desktop entry matching so token overlap does not grab the wrong app as easily.
+- Fixed libopus codec label in the recorder/settings checks.
+
+### Notes
+- Screen Time is opt-in. It stores local JSON under the iNiR state path and does not send anything anywhere. Revolutionary concept, apparently.
+- `quickshell` from official repos is still the intended package path; the AUR compile treadmill can rest.
+
 ## [2.25.2] - 2026-05-27
 
 Performance and polish release. Boot time dropped ~31% (QML parsing 2.83s → 1.95s) by splitting `qs.services` into core + deferred modules and deferring 17 singletons past the first frame. The shell now auto-dims when power saving kicks in, launched apps stop showing up as "inir" in task managers, and most UI transitions got the organic morphing treatment — nothing pops in or out anymore.
