@@ -69,23 +69,15 @@ Singleton {
 
     Process {
         id: detectGpuUsageSource
-        // NVIDIA GPUs are detected first by vendor ID (0x10de) and prefer nvidia-smi,
-        // because their sysfs gpu_busy_percent can exist but always return 0.
-        // AMD/Intel use the native DRM sysfs counter. Fall back to nvidia-smi otherwise.
+        // NVIDIA GPUs use nvidia-smi.  AMD/Intel use the native DRM sysfs counter.
+        // Never read /sys/class/drm/card*/device/vendor — on hybrid laptops
+        // that wakes the dGPU from runtime PM suspend.  nvidia-smi's binary
+        // existence is a safe (no-sysfs) proxy for "NVIDIA GPU is present".
+        // sysfs gpu_busy_percent is only probed on non-NVIDIA cards.
         command: ["/usr/bin/bash", "-c", `
             nvidia_path=""
             if command -v nvidia-smi >/dev/null 2>&1; then
                 nvidia_path=$(command -v nvidia-smi)
-            fi
-
-            is_nvidia=""
-            for vendor_file in /sys/class/drm/card*/device/vendor; do
-                [ -f "$vendor_file" ] || continue
-                vendor=$(cat "$vendor_file" 2>/dev/null)
-                [ "$vendor" = "0x10de" ] && is_nvidia=1 && break
-            done
-
-            if [ -n "$is_nvidia" ] && [ -n "$nvidia_path" ]; then
                 echo "nvidia-smi:$nvidia_path"
                 exit 0
             fi
@@ -97,11 +89,6 @@ Singleton {
                     exit 0
                 fi
             done
-
-            if [ -n "$nvidia_path" ]; then
-                echo "nvidia-smi:$nvidia_path"
-                exit 0
-            fi
 
             echo "none"
         `]
@@ -356,15 +343,35 @@ Singleton {
 
     Process {
         id: detectTempSensors
-        // Detect CPU and GPU temperature sensors using priority-based selection.
-        // On Intel, acpitz/pch report near-constant values; coretemp is the real sensor.
+        // Detect CPU temperature sensors from hwmon, skipping GPU hwmon entirely
+        // when nvidia-smi is available (nvidia-smi handles GPU temp in _pollSensors).
+        // Reading any sysfs attribute under an NVIDIA GPU's device node wakes the
+        // dGPU from runtime PM suspend — so we must avoid touching NVIDIA hwmon at all.
+        // When nvidia-smi is NOT available, fall back to hwmon GPU detection.
         command: ["/usr/bin/bash", "-c", `
             cpu_path=""
-            gpu_path=""
             cpu_priority=0
+
+            # Check if GPU temp will come from nvidia-smi — if so, skip GPU hwmon
+            # detection entirely to avoid waking the dGPU.
+            nvidia_smi=""
+            if command -v nvidia-smi >/dev/null 2>&1; then
+                nvidia_smi=1
+            fi
 
             for hwmon in /sys/class/hwmon/hwmon*; do
                 [ -f "$hwmon/name" ] || continue
+
+                # Skip hwmon under any DRM card when nvidia-smi is available —
+                # reading any attribute under the NVIDIA PCI device wakes the dGPU.
+                # The name read itself must be avoided, not just the temp read.
+                if [ -n "$nvidia_smi" ]; then
+                    hwmon_device=$(readlink -f "$hwmon/device" 2>/dev/null || echo "")
+                    if echo "$hwmon_device" | grep -q '/drm/'; then
+                        continue
+                    fi
+                fi
+
                 name=$(cat "$hwmon/name" 2>/dev/null)
 
                 temp=""
@@ -400,24 +407,28 @@ Singleton {
                     cpu_path="$temp"
                 fi
 
-                case "$name" in
-                    amdgpu|radeon|nvidia|nouveau|i915|xe|panfrost|lima|v3d|vc4)
-                        # For amdgpu: prefer 'edge' over 'junction' (junction is hotspot, always higher)
-                        if [ -z "$gpu_path" ]; then
-                            gpu_edge=""
-                            for lf in "$hwmon"/temp*_label; do
-                                [ -f "$lf" ] || continue
-                                gl=$(cat "$lf" 2>/dev/null)
-                                [ "$gl" = "edge" ] && gpu_edge="$lf" && break
-                            done
-                            if [ -n "$gpu_edge" ]; then
-                                gpu_path=$(echo "$gpu_edge" | sed 's/_label/_input/')
-                            else
-                                gpu_path="$temp"
+                # GPU sensors: only probe via hwmon when nvidia-smi is not available.
+                # Reading NVIDIA hwmon attributes wakes the dGPU from suspend.
+                if [ -z "$nvidia_smi" ]; then
+                    case "$name" in
+                        amdgpu|radeon|nvidia|nouveau|i915|xe|panfrost|lima|v3d|vc4)
+                            # For amdgpu: prefer 'edge' over 'junction' (junction is hotspot, always higher)
+                            if [ -z "$gpu_path" ]; then
+                                gpu_edge=""
+                                for lf in "$hwmon"/temp*_label; do
+                                    [ -f "$lf" ] || continue
+                                    gl=$(cat "$lf" 2>/dev/null)
+                                    [ "$gl" = "edge" ] && gpu_edge="$lf" && break
+                                done
+                                if [ -n "$gpu_edge" ]; then
+                                    gpu_path=$(echo "$gpu_edge" | sed 's/_label/_input/')
+                                else
+                                    gpu_path="$temp"
+                                fi
                             fi
-                        fi
-                        ;;
-                esac
+                            ;;
+                    esac
+                fi
             done
 
             # Fallback to thermal_zone if hwmon didn't find sensors
@@ -433,7 +444,7 @@ Singleton {
                         esac
                     fi
 
-                    if [ -z "$gpu_path" ]; then
+                    if [ -z "$gpu_path" ] && [ -z "$nvidia_smi" ]; then
                         case "$type" in
                             *gpu*|*radeon*|*amdgpu*|*nvidia*)
                                 gpu_path="$tz/temp" ;;
@@ -461,26 +472,35 @@ Singleton {
 
     Process {
         id: detectHybridGpu
-        // Detect iGPU+dGPU hybrid setups by reading DRM boot_vga flags.
-        // boot_vga=1 → primary display GPU (iGPU on laptops), boot_vga=0 → secondary (dGPU).
-        // On hybrid systems, outputs the dGPU's runtime_status path so the poll loop can
-        // check suspend state before issuing any GPU query, preventing unwanted dGPU wake-ups.
-        // On non-hybrid desktops (single GPU or no boot_vga support) outputs "none".
+        // Detect iGPU+dGPU hybrid setups using driver symlinks instead of reading
+        // boot_vga or vendor from the dGPU's PCI sysfs — reading any attribute
+        // under an NVIDIA GPU's device node wakes it from runtime PM suspend.
+        // Driver symlinks are resolved by the VFS dentry cache and don't wake hardware.
+        // On hybrid systems, outputs the dGPU's runtime_status path so the poll loop
+        // can check suspend state before issuing any GPU query.
+        // On non-hybrid desktops outputs "none".
         command: ["/usr/bin/bash", "-c", `
             igpu_found=""
             dgpu_runtime=""
 
-            for card in /sys/class/drm/card*/; do
+            for card in /sys/class/drm/card*; do
+                [ -d "$card" ] || continue
                 name=$(basename "$card")
                 echo "$name" | grep -qE '^card[0-9]+$' || continue
-                bvga_file="\${card}device/boot_vga"
-                [ -f "$bvga_file" ] || continue
-                bvga=$(cat "$bvga_file" 2>/dev/null)
-                if [ "$bvga" = "1" ]; then
-                    igpu_found=1
-                elif [ "$bvga" = "0" ]; then
-                    runtime="\${card}device/power/runtime_status"
+
+                # Use driver symlink to identify GPU without reading PCI attributes.
+                # NVIDIA cards link to .../drivers/nvidia, others to i915/amdgpu/etc.
+                # Symlink resolution is safe — doesn't wake suspended hardware.
+                driver=$(basename "$(readlink -f "$card/device/driver" 2>/dev/null)" 2>/dev/null || true)
+                if [ "$driver" = "nvidia" ]; then
+                    runtime="$card/device/power/runtime_status"
                     [ -f "$runtime" ] && dgpu_runtime="$runtime"
+                else
+                    # Non-NVIDIA card: check if it's the primary display GPU (iGPU)
+                    bvga_file="$card/device/boot_vga"
+                    if [ -f "$bvga_file" ] && [ "$(cat "$bvga_file" 2>/dev/null)" = "1" ]; then
+                        igpu_found=1
+                    fi
                 fi
             done
 

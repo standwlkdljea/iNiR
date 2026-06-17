@@ -246,58 +246,67 @@ Variants {
                     }
                 }
 
-                Video {
-                    id: videoWallpaper
+                // Video wallpaper — lazy-loaded to prevent Qt Multimedia's FFmpeg/VA-API
+                // from probing GPU DRM nodes at idle and waking the dGPU on hybrid laptops.
+                Loader {
+                    id: videoWallpaperLoader
                     anchors.fill: parent
-                    visible: panelRoot.wallpaperIsVideo && !blurEffect.visible
-                    source: {
-                        if (!panelRoot.wallpaperIsVideo) return "";
-                        const path = panelRoot.wallpaperSourceRaw;
-                        if (!path) return "";
-                        return path.startsWith("file://") ? path : ("file://" + path);
-                    }
-                    fillMode: VideoOutput.PreserveAspectCrop
-                    loops: MediaPlayer.Infinite
-                    muted: true
-                    autoPlay: true
+                    active: panelRoot.wallpaperIsVideo && !blurEffect.visible
+                    sourceComponent: Component {
+                        Video {
+                            id: videoWallpaper
+                            anchors.fill: parent
+                            visible: true
+                            source: {
+                                if (!panelRoot.wallpaperIsVideo) return "";
+                                const path = panelRoot.wallpaperSourceRaw;
+                                if (!path) return "";
+                                return path.startsWith("file://") ? path : ("file://" + path);
+                            }
+                            fillMode: VideoOutput.PreserveAspectCrop
+                            loops: MediaPlayer.Infinite
+                            muted: true
+                            autoPlay: true
 
-                    readonly property bool shouldPlay: panelRoot.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
+                            readonly property bool shouldPlay: panelRoot.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
 
-                    function pauseAndShowFirstFrame() {
-                        pause()
-                        seek(0)
-                    }
+                            function pauseAndShowFirstFrame() {
+                                pause()
+                                seek(0)
+                            }
 
-                    onPlaybackStateChanged: {
-                        if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
-                            pauseAndShowFirstFrame()
+                            onPlaybackStateChanged: {
+                                if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
+                                    pauseAndShowFirstFrame()
+                                }
+                                if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
+                                    play()
+                                }
+                            }
+
+                            onShouldPlayChanged: {
+                                if (visible && panelRoot.wallpaperIsVideo) {
+                                    if (shouldPlay) play()
+                                    else pauseAndShowFirstFrame()
+                                }
+                            }
+
+                            onVisibleChanged: {
+                                if (visible && panelRoot.wallpaperIsVideo) {
+                                    if (shouldPlay) play()
+                                    else pauseAndShowFirstFrame()
+                                } else {
+                                    pause()
+                                }
+                            }
+
+                            layer.enabled: Appearance.effectsEnabled && panelRoot.enableAnimatedBlur && (panelRoot.wEffects.blurRadius ?? 0) > 0
+                            layer.effect: MultiEffect {
+                                blurEnabled: true
+                                blur: ((panelRoot.wEffects.blurRadius ?? 32) * Math.max(0, Math.min(1, panelRoot.thumbnailBlurStrength / 100))) / 100.0
+                                blurMax: 64
+                            }
                         }
-                        if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
-                            play()
-                        }
-                    }
-
-                    onShouldPlayChanged: {
-                        if (visible && panelRoot.wallpaperIsVideo) {
-                            if (shouldPlay) play()
-                            else pauseAndShowFirstFrame()
-                        }
-                    }
-
-                    onVisibleChanged: {
-                        if (visible && panelRoot.wallpaperIsVideo) {
-                            if (shouldPlay) play()
-                            else pauseAndShowFirstFrame()
-                        } else {
-                            pause()
-                        }
-                    }
-
-                    layer.enabled: Appearance.effectsEnabled && panelRoot.enableAnimatedBlur && (panelRoot.wEffects.blurRadius ?? 0) > 0
-                    layer.effect: MultiEffect {
-                        blurEnabled: true
-                        blur: ((panelRoot.wEffects.blurRadius ?? 32) * Math.max(0, Math.min(1, panelRoot.thumbnailBlurStrength / 100))) / 100.0
-                        blurMax: 64
                     }
                 }
             }

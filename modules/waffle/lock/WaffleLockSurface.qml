@@ -149,61 +149,69 @@ MouseArea {
         }
     }
     
-    // Video wallpaper — shows first frame (paused) when enableAnimation is false
-    Video {
-        id: videoWallpaper
+    // Video wallpaper — lazy-loaded to prevent Qt Multimedia's FFmpeg/VA-API
+    // from probing GPU DRM nodes at idle on hybrid laptops.
+    Loader {
+        id: videoWallpaperLoader
         anchors.fill: parent
-        visible: root.wallpaperIsVideo
-        source: {
-            if (!root.wallpaperIsVideo || !root._wallpaperSource) return "";
-            const path = root._wallpaperSource;
-            return path.startsWith("file://") ? path : ("file://" + path);
-        }
-        fillMode: VideoOutput.PreserveAspectCrop
-        loops: MediaPlayer.Infinite
-        muted: true
-        autoPlay: true
+        active: root.wallpaperIsVideo
+        sourceComponent: Component {
+            Video {
+                id: videoWallpaper
+                anchors.fill: parent
+                visible: true
+                source: {
+                    if (!root.wallpaperIsVideo || !root._wallpaperSource) return "";
+                    const path = root._wallpaperSource;
+                    return path.startsWith("file://") ? path : ("file://" + path);
+                }
+                fillMode: VideoOutput.PreserveAspectCrop
+                loops: MediaPlayer.Infinite
+                muted: true
+                autoPlay: true
 
-        readonly property bool shouldPlay: root.enableAnimation
+                readonly property bool shouldPlay: root.enableAnimation
 
-        function pauseAndShowFirstFrame() {
-            pause()
-            seek(0)
-        }
+                function pauseAndShowFirstFrame() {
+                    pause()
+                    seek(0)
+                }
 
-        onPlaybackStateChanged: {
-            if (playbackState === MediaPlayer.PlayingState && !shouldPlay)
-                pauseAndShowFirstFrame()
-            if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay)
-                play()
-        }
+                onPlaybackStateChanged: {
+                    if (playbackState === MediaPlayer.PlayingState && !shouldPlay)
+                        pauseAndShowFirstFrame()
+                    if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay)
+                        play()
+                }
 
-        onShouldPlayChanged: {
-            if (visible && root.wallpaperIsVideo) {
-                if (shouldPlay) play()
-                else pauseAndShowFirstFrame()
+                onShouldPlayChanged: {
+                    if (visible && root.wallpaperIsVideo) {
+                        if (shouldPlay) play()
+                        else pauseAndShowFirstFrame()
+                    }
+                }
+
+                onVisibleChanged: {
+                    if (visible && root.wallpaperIsVideo) {
+                        if (shouldPlay) play()
+                        else pauseAndShowFirstFrame()
+                    } else {
+                        pause()
+                    }
+                }
+
+                layer.enabled: root.blurEnabled && root.effectsSafe
+                layer.effect: FastBlur {
+                    radius: root.blurRadius
+                }
+
+                transform: Scale {
+                    origin.x: videoWallpaper.width / 2
+                    origin.y: videoWallpaper.height / 2
+                    xScale: root.blurEnabled ? 1.1 : 1
+                    yScale: root.blurEnabled ? 1.1 : 1
+                }
             }
-        }
-        
-        onVisibleChanged: {
-            if (visible && root.wallpaperIsVideo) {
-                if (shouldPlay) play()
-                else pauseAndShowFirstFrame()
-            } else {
-                pause()
-            }
-        }
-        
-        layer.enabled: root.blurEnabled && root.effectsSafe
-        layer.effect: FastBlur {
-            radius: root.blurRadius
-        }
-        
-        transform: Scale {
-            origin.x: videoWallpaper.width / 2
-            origin.y: videoWallpaper.height / 2
-            xScale: root.blurEnabled ? 1.1 : 1
-            yScale: root.blurEnabled ? 1.1 : 1
         }
     }
     

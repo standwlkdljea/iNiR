@@ -97,40 +97,48 @@ MouseArea {
          z: -2
      }
 
-     // Video wallpaper — first frame (paused) when animation disabled
-     Video {
-         id: videoWallpaperSource
+     // Video wallpaper source for the MultiEffect — lazy-loaded to prevent
+     // Qt Multimedia's FFmpeg/VA-API from probing GPU DRM nodes at idle.
+     Loader {
+         id: videoWallpaperSourceLoader
          anchors.fill: parent
-         visible: false
-         z: -2
-         source: {
-             if (!root.wallpaperIsVideo || !root._wallpaperPath) return "";
-             const path = root._wallpaperPath;
-             return path.startsWith("file://") ? path : ("file://" + path);
-         }
-         fillMode: VideoOutput.PreserveAspectCrop
-         loops: MediaPlayer.Infinite
-         muted: true
-         autoPlay: true
+         active: root.wallpaperIsVideo
+         sourceComponent: Component {
+             Video {
+                 id: videoWallpaperSource
+                 anchors.fill: parent
+                 visible: true
+                 z: -2
+                 source: {
+                     if (!root.wallpaperIsVideo || !root._wallpaperPath) return "";
+                     const path = root._wallpaperPath;
+                     return path.startsWith("file://") ? path : ("file://" + path);
+                 }
+                 fillMode: VideoOutput.PreserveAspectCrop
+                 loops: MediaPlayer.Infinite
+                 muted: true
+                 autoPlay: true
 
-         readonly property bool shouldPlay: root.enableAnimation
+                 readonly property bool shouldPlay: root.enableAnimation
 
-         function pauseAndShowFirstFrame() {
-             pause()
-             seek(0)
-         }
+                 function pauseAndShowFirstFrame() {
+                     pause()
+                     seek(0)
+                 }
 
-         onPlaybackStateChanged: {
-             if (playbackState === MediaPlayer.PlayingState && !shouldPlay)
-                 pauseAndShowFirstFrame()
-             if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay)
-                 play()
-         }
+                 onPlaybackStateChanged: {
+                     if (playbackState === MediaPlayer.PlayingState && !shouldPlay)
+                         pauseAndShowFirstFrame()
+                     if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay)
+                         play()
+                 }
 
-         onShouldPlayChanged: {
-             if (root.wallpaperIsVideo) {
-                 if (shouldPlay) play()
-                 else pauseAndShowFirstFrame()
+                 onShouldPlayChanged: {
+                     if (root.wallpaperIsVideo) {
+                         if (shouldPlay) play()
+                         else pauseAndShowFirstFrame()
+                     }
+                 }
              }
          }
      }
@@ -139,8 +147,8 @@ MouseArea {
          id: backgroundWallpaper
          anchors.fill: parent
          source: root.wallpaperIsGif ? gifWallpaperSource
-               : root.wallpaperIsVideo ? videoWallpaperSource
-               : backgroundWallpaperSource
+              : root.wallpaperIsVideo ? videoWallpaperSourceLoader.item
+              : backgroundWallpaperSource
          visible: true
          z: -1
 

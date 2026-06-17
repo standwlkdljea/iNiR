@@ -880,86 +880,96 @@ Scope {
                 }
 
                 // Video wallpaper (Qt Multimedia)
-                // Always loaded for videos: plays when animation enabled, frozen (paused) when disabled
-                Video {
-                    id: videoWallpaper
+                // Lazy-loaded via Loader to prevent Qt Multimedia's FFmpeg backend
+                // from initializing hardware decoding (VA-API/NVDEC) at startup.
+                // VA-API probes DRM device nodes during init, which wakes the dGPU
+                // from runtime PM suspend on hybrid laptops.  See #XXX.
+                Loader {
+                    id: videoWallpaperLoader
                     anchors.fill: parent
-                    visible: opacity > 0 && !blurLoader.active && !bgRoot.backdropActive && bgRoot.wallpaperIsVideo
-                    opacity: bgRoot.wallpaperIsVideo ? 1 : 0
-                    Behavior on opacity {
-                        enabled: Appearance.animationsEnabled
-                        animation: NumberAnimation { duration: Appearance.animation.elementMoveFast.duration; easing.type: Appearance.animation.elementMoveFast.type; easing.bezierCurve: Appearance.animation.elementMoveFast.bezierCurve }
-                    }
-                    source: {
-                        if (bgRoot.wallpaperSafetyTriggered || !bgRoot.wallpaperIsVideo) return "";
-                        const path = bgRoot.wallpaperPathRaw;
-                        if (!path) return "";
-                        return path.startsWith("file://") ? path : ("file://" + path);
-                    }
-                    fillMode: VideoOutput.PreserveAspectCrop
-                    loops: MediaPlayer.Infinite
-                    muted: true
-                    autoPlay: true
+                    active: bgRoot.wallpaperIsVideo
+                    sourceComponent: Component {
+                        Video {
+                            id: videoWallpaper
+                            anchors.fill: parent
+                            visible: opacity > 0 && !blurLoader.active && !bgRoot.backdropActive && bgRoot.wallpaperIsVideo
+                            opacity: bgRoot.wallpaperIsVideo ? 1 : 0
+                            Behavior on opacity {
+                                enabled: Appearance.animationsEnabled
+                                animation: NumberAnimation { duration: Appearance.animation.elementMoveFast.duration; easing.type: Appearance.animation.elementMoveFast.type; easing.bezierCurve: Appearance.animation.elementMoveFast.bezierCurve }
+                            }
+                            source: {
+                                if (bgRoot.wallpaperSafetyTriggered || !bgRoot.wallpaperIsVideo) return "";
+                                const path = bgRoot.wallpaperPathRaw;
+                                if (!path) return "";
+                                return path.startsWith("file://") ? path : ("file://" + path);
+                            }
+                            fillMode: VideoOutput.PreserveAspectCrop
+                            loops: MediaPlayer.Infinite
+                            muted: true
+                            autoPlay: true
 
-                    readonly property bool shouldPlay: bgRoot.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
+                            readonly property bool shouldPlay: bgRoot.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
 
-                    function pauseAndShowFirstFrame() {
-                        pause()
-                        seek(0) // Ensure first frame is displayed when paused
-                    }
+                            function pauseAndShowFirstFrame() {
+                                pause()
+                                seek(0) // Ensure first frame is displayed when paused
+                            }
 
-                    onPlaybackStateChanged: {
-                        if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
-                            pauseAndShowFirstFrame()
-                        }
-                        if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
-                            play()
-                        }
-                    }
+                            onPlaybackStateChanged: {
+                                if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
+                                    pauseAndShowFirstFrame()
+                                }
+                                if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
+                                    play()
+                                }
+                            }
 
-                    onShouldPlayChanged: {
-                        if (visible && bgRoot.wallpaperIsVideo) {
-                            if (shouldPlay) play()
-                            else pauseAndShowFirstFrame()
-                        }
-                    }
-                    
-                    onVisibleChanged: {
-                        if (visible && bgRoot.wallpaperIsVideo) {
-                            if (shouldPlay) play()
-                            else pauseAndShowFirstFrame()
-                        } else {
-                            pause()
-                        }
-                    }
-                    
-                    Connections {
-                        target: GlobalStates
-                        function onScreenLockedChanged() {
-                            if (!videoWallpaper.shouldPlay) {
-                                videoWallpaper.pauseAndShowFirstFrame()
-                            } else if (videoWallpaper.visible && bgRoot.wallpaperIsVideo) {
-                                videoWallpaper.play()
+                            onShouldPlayChanged: {
+                                if (visible && bgRoot.wallpaperIsVideo) {
+                                    if (shouldPlay) play()
+                                    else pauseAndShowFirstFrame()
+                                }
+                            }
+
+                            onVisibleChanged: {
+                                if (visible && bgRoot.wallpaperIsVideo) {
+                                    if (shouldPlay) play()
+                                    else pauseAndShowFirstFrame()
+                                } else {
+                                    pause()
+                                }
+                            }
+
+                            Connections {
+                                target: GlobalStates
+                                function onScreenLockedChanged() {
+                                    if (!videoWallpaper.shouldPlay) {
+                                        videoWallpaper.pauseAndShowFirstFrame()
+                                    } else if (videoWallpaper.visible && bgRoot.wallpaperIsVideo) {
+                                        videoWallpaper.play()
+                                    }
+                                }
+                            }
+
+                            Connections {
+                                target: GameMode
+                                function onActiveChanged() {
+                                    if (!videoWallpaper.shouldPlay) {
+                                        videoWallpaper.pauseAndShowFirstFrame()
+                                    } else if (videoWallpaper.visible && bgRoot.wallpaperIsVideo) {
+                                        videoWallpaper.play()
+                                    }
+                                }
+                            }
+
+                            layer.enabled: Appearance.effectsEnabled && (bgRoot.effectsOptions.enableAnimatedBlur ?? false) && (bgRoot.effectsOptions.blurRadius ?? 0) > 0
+                            layer.effect: GaussianBlur {
+                                radius: Math.round((bgRoot.effectsOptions.blurRadius ?? 32) * Math.max(0, Math.min(1, (bgRoot.effectsOptions.thumbnailBlurStrength ?? 50) / 100)))
+                                // See #159 — cap samples to bound fragment shader cost
+                                samples: Math.min(33, radius * 2 + 1)
                             }
                         }
-                    }
-
-                    Connections {
-                        target: GameMode
-                        function onActiveChanged() {
-                            if (!videoWallpaper.shouldPlay) {
-                                videoWallpaper.pauseAndShowFirstFrame()
-                            } else if (videoWallpaper.visible && bgRoot.wallpaperIsVideo) {
-                                videoWallpaper.play()
-                            }
-                        }
-                    }
-
-                    layer.enabled: Appearance.effectsEnabled && (bgRoot.effectsOptions.enableAnimatedBlur ?? false) && (bgRoot.effectsOptions.blurRadius ?? 0) > 0
-                    layer.effect: GaussianBlur {
-                        radius: Math.round((bgRoot.effectsOptions.blurRadius ?? 32) * Math.max(0, Math.min(1, (bgRoot.effectsOptions.thumbnailBlurStrength ?? 50) / 100)))
-                        // See #159 — cap samples to bound fragment shader cost
-                        samples: Math.min(33, radius * 2 + 1)
                     }
                 }
             }

@@ -198,63 +198,70 @@ Variants {
                 }
             }
 
-            // Video wallpaper
-            // Always loaded for videos: plays when animation enabled, frozen (paused) when disabled
-            Video {
-                id: videoWallpaper
+            // Video wallpaper — lazy-loaded to prevent Qt Multimedia's FFmpeg/VA-API
+            // from probing GPU DRM nodes at idle and waking the dGPU on hybrid laptops.
+            Loader {
+                id: videoWallpaperLoader
                 anchors.fill: parent
                 anchors.margins: -parent.blurOverflow
-                visible: !backdropWindow.useAuroraStyle && backdropWindow.wallpaperIsVideo
-                source: {
-                    if (!backdropWindow.wallpaperIsVideo) return "";
-                    const path = backdropWindow.wallpaperPathRaw;
-                    if (!path) return "";
-                    return path.startsWith("file://") ? path : ("file://" + path);
-                }
-                fillMode: VideoOutput.PreserveAspectCrop
-                loops: MediaPlayer.Infinite
-                muted: true
-                autoPlay: true
+                active: backdropWindow.wallpaperIsVideo && !backdropWindow.useAuroraStyle
+                sourceComponent: Component {
+                    Video {
+                        id: videoWallpaper
+                        anchors.fill: parent
+                        visible: true
+                        source: {
+                            if (!backdropWindow.wallpaperIsVideo) return "";
+                            const path = backdropWindow.wallpaperPathRaw;
+                            if (!path) return "";
+                            return path.startsWith("file://") ? path : ("file://" + path);
+                        }
+                        fillMode: VideoOutput.PreserveAspectCrop
+                        loops: MediaPlayer.Infinite
+                        muted: true
+                        autoPlay: true
 
-                readonly property bool shouldPlay: backdropWindow.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
+                        readonly property bool shouldPlay: backdropWindow.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
 
-                function pauseAndShowFirstFrame() {
-                    pause()
-                    seek(0) // Ensure first frame is displayed when paused
-                }
+                        function pauseAndShowFirstFrame() {
+                            pause()
+                            seek(0)
+                        }
 
-                onPlaybackStateChanged: {
-                    if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
-                        pauseAndShowFirstFrame()
+                        onPlaybackStateChanged: {
+                            if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
+                                pauseAndShowFirstFrame()
+                            }
+                            if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
+                                play()
+                            }
+                        }
+
+                        onShouldPlayChanged: {
+                            if (visible && backdropWindow.wallpaperIsVideo) {
+                                if (shouldPlay) play()
+                                else pauseAndShowFirstFrame()
+                            }
+                        }
+
+                        onVisibleChanged: {
+                            if (visible && backdropWindow.wallpaperIsVideo) {
+                                if (shouldPlay) play()
+                                else pauseAndShowFirstFrame()
+                            } else {
+                                pause()
+                            }
+                        }
+
+                        layer.enabled: Appearance.effectsEnabled && backdropWindow.enableAnimatedBlur && backdropWindow.backdropBlurRadius > 0
+                        layer.effect: MultiEffect {
+                            blurEnabled: true
+                            blur: (backdropWindow.backdropBlurRadius * Math.max(0, Math.min(1, backdropWindow.thumbnailBlurStrength / 100))) / 100.0
+                            blurMax: 64
+                            saturation: backdropWindow.backdropSaturation
+                            contrast: backdropWindow.backdropContrast
+                        }
                     }
-                    if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
-                        play()
-                    }
-                }
-
-                onShouldPlayChanged: {
-                    if (visible && backdropWindow.wallpaperIsVideo) {
-                        if (shouldPlay) play()
-                        else pauseAndShowFirstFrame()
-                    }
-                }
-
-                onVisibleChanged: {
-                    if (visible && backdropWindow.wallpaperIsVideo) {
-                        if (shouldPlay) play()
-                        else pauseAndShowFirstFrame()
-                    } else {
-                        pause()
-                    }
-                }
-
-                layer.enabled: Appearance.effectsEnabled && backdropWindow.enableAnimatedBlur && backdropWindow.backdropBlurRadius > 0
-                layer.effect: MultiEffect {
-                    blurEnabled: true
-                    blur: (backdropWindow.backdropBlurRadius * Math.max(0, Math.min(1, backdropWindow.thumbnailBlurStrength / 100))) / 100.0
-                    blurMax: 64
-                    saturation: backdropWindow.backdropSaturation
-                    contrast: backdropWindow.backdropContrast
                 }
             }
 
@@ -314,60 +321,67 @@ Variants {
                 }
             }
 
-            // Aurora-style for Videos
-            Video {
-                id: auroraVideoWallpaper
+            // Aurora-style for Videos — lazy-loaded like the main video wallpaper
+            Loader {
+                id: auroraVideoWallpaperLoader
                 anchors.fill: parent
                 anchors.margins: -parent.blurOverflow
-                visible: backdropWindow.useAuroraStyle && backdropWindow.wallpaperIsVideo
-                source: videoWallpaper.source
-                fillMode: VideoOutput.PreserveAspectCrop
-                loops: MediaPlayer.Infinite
-                muted: true
-                autoPlay: true
+                active: backdropWindow.useAuroraStyle && backdropWindow.wallpaperIsVideo
+                sourceComponent: Component {
+                    Video {
+                        id: auroraVideoWallpaper
+                        anchors.fill: parent
+                        visible: true
+                        source: videoWallpaperLoader.item ? videoWallpaperLoader.item.source : ""
+                        fillMode: VideoOutput.PreserveAspectCrop
+                        loops: MediaPlayer.Infinite
+                        muted: true
+                        autoPlay: true
 
-                readonly property bool shouldPlay: backdropWindow.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
+                        readonly property bool shouldPlay: backdropWindow.enableAnimation && !GlobalStates.screenLocked && !Appearance._gameModeActive && !GlobalStates.overviewOpen
 
-                function pauseAndShowFirstFrame() {
-                    pause()
-                    seek(0)
-                }
+                        function pauseAndShowFirstFrame() {
+                            pause()
+                            seek(0)
+                        }
 
-                onPlaybackStateChanged: {
-                    if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
-                        pauseAndShowFirstFrame()
+                        onPlaybackStateChanged: {
+                            if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
+                                pauseAndShowFirstFrame()
+                            }
+                            if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
+                                play()
+                            }
+                        }
+
+                        onShouldPlayChanged: {
+                            if (visible && backdropWindow.wallpaperIsVideo) {
+                                if (shouldPlay) play()
+                                else pauseAndShowFirstFrame()
+                            }
+                        }
+
+                        onVisibleChanged: {
+                            if (visible && backdropWindow.wallpaperIsVideo) {
+                                if (shouldPlay) play()
+                                else pauseAndShowFirstFrame()
+                            } else {
+                                pause()
+                            }
+                        }
+
+                        layer.enabled: Appearance.effectsEnabled && backdropWindow.enableAnimatedBlur
+                        layer.effect: MultiEffect {
+                            source: auroraVideoWallpaper
+                            anchors.fill: source
+                            saturation: Appearance.angelEverywhere
+                                ? Appearance.angel.blurSaturation
+                                : (Appearance.effectsEnabled ? 0.2 : 0)
+                            blurEnabled: Appearance.effectsEnabled
+                            blurMax: 64
+                            blur: Appearance.effectsEnabled ? 1 : 0
+                        }
                     }
-                    if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
-                        play()
-                    }
-                }
-
-                onShouldPlayChanged: {
-                    if (visible && backdropWindow.wallpaperIsVideo) {
-                        if (shouldPlay) play()
-                        else pauseAndShowFirstFrame()
-                    }
-                }
-
-                onVisibleChanged: {
-                    if (visible && backdropWindow.wallpaperIsVideo) {
-                        if (shouldPlay) play()
-                        else pauseAndShowFirstFrame()
-                    } else {
-                        pause()
-                    }
-                }
-
-                layer.enabled: Appearance.effectsEnabled && backdropWindow.enableAnimatedBlur
-                layer.effect: MultiEffect {
-                    source: auroraVideoWallpaper
-                    anchors.fill: source
-                    saturation: Appearance.angelEverywhere
-                        ? Appearance.angel.blurSaturation
-                        : (Appearance.effectsEnabled ? 0.2 : 0)
-                    blurEnabled: Appearance.effectsEnabled
-                    blurMax: 64
-                    blur: Appearance.effectsEnabled ? 1 : 0
                 }
             }
 

@@ -1428,6 +1428,32 @@ apply_gpu_policy() {
     [[ -z "${__VK_LAYER_NV_optimus:-}" ]] && export __VK_LAYER_NV_optimus=non_NVIDIA_only
     # VDPAU: Qt FFmpeg probes libvdpau_nvidia.so on init even with hwaccel off.
     [[ -z "${VDPAU_DRIVER:-}" ]] && export VDPAU_DRIVER=none
+    # EGL: libglvnd enumerates all vendor ICDs at init — NVIDIA's libEGL_nvidia.so
+    # opens /dev/nvidia* during load even for capability queries, waking the dGPU.
+    # __EGL_VENDOR_LIBRARY_FILENAMES restricts ICD loading to Mesa only.
+    if [[ -z "${__EGL_VENDOR_LIBRARY_FILENAMES:-}" ]]; then
+        local mesa_egl_json
+        for mesa_egl_json in \
+            /usr/share/glvnd/egl_vendor.d/50_mesa.json \
+            /etc/glvnd/egl_vendor.d/50_mesa.json; do
+            if [[ -f "$mesa_egl_json" ]]; then
+                export __EGL_VENDOR_LIBRARY_FILENAMES="$mesa_egl_json"
+                break
+            fi
+        done
+    fi
+    # DRI/GBM: Mesa's EGL/GBM initialization calls drmGetDevices2() which
+    # enumerates ALL DRM nodes including nvidia-drm card1.  On systems where
+    # nvidia_drm.modeset=Y, the kernel creates PRIME/DMA-BUF references that
+    # appear as /dev/nvidia* fds in every Wayland client.  This is unfixable
+    # from userspace without either: (a) disabling nvidia_drm.modeset in the
+    # NVIDIA driver, or (b) using the dedicated GPU only for offload apps.
+    # The env vars above ensure iNiR's own Qt rendering never touches the
+    # dGPU — the remaining wake is from kernel-level DRM cross-references.
+    # See the power management section in docs/OPTIMIZATION.md.
+    # If the dGPU fails to suspend after 60+ seconds of idle, check:
+    #   cat /sys/bus/pci/devices/0000:01:00.0/power/autosuspend_delay_ms
+    #   (default may be very high on some driver versions — try 5000ms).
 }
 
 apply_qt_runtime_env() {

@@ -159,63 +159,70 @@ Variants {
                 }
             }
 
-            // Video wallpaper
-            // Always loaded for videos: plays when animation enabled, frozen (paused) when disabled
-            Video {
-                id: videoWallpaper
+            // Video wallpaper — lazy-loaded to prevent Qt Multimedia's FFmpeg/VA-API
+            // from probing GPU DRM nodes at idle and waking the dGPU on hybrid laptops.
+            Loader {
+                id: videoWallpaperLoader
                 anchors.fill: parent
                 anchors.margins: -parent.blurOverflow
-                visible: backdropWindow.wallpaperIsVideo
-                source: {
-                    if (!backdropWindow.wallpaperIsVideo) return "";
-                    const path = backdropWindow.wallpaperPathRaw;
-                    if (!path) return "";
-                    return path.startsWith("file://") ? path : ("file://" + path);
-                }
-                fillMode: VideoOutput.PreserveAspectCrop
-                loops: MediaPlayer.Infinite
-                muted: true
-                autoPlay: true
+                active: backdropWindow.wallpaperIsVideo
+                sourceComponent: Component {
+                    Video {
+                        id: videoWallpaper
+                        anchors.fill: parent
+                        visible: true
+                        source: {
+                            if (!backdropWindow.wallpaperIsVideo) return "";
+                            const path = backdropWindow.wallpaperPathRaw;
+                            if (!path) return "";
+                            return path.startsWith("file://") ? path : ("file://" + path);
+                        }
+                        fillMode: VideoOutput.PreserveAspectCrop
+                        loops: MediaPlayer.Infinite
+                        muted: true
+                        autoPlay: true
 
-                readonly property bool shouldPlay: backdropWindow.enableAnimation
+                        readonly property bool shouldPlay: backdropWindow.enableAnimation
 
-                function pauseAndShowFirstFrame() {
-                    pause()
-                    seek(0)
-                }
+                        function pauseAndShowFirstFrame() {
+                            pause()
+                            seek(0)
+                        }
 
-                onPlaybackStateChanged: {
-                    if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
-                        pauseAndShowFirstFrame()
+                        onPlaybackStateChanged: {
+                            if (playbackState === MediaPlayer.PlayingState && !shouldPlay) {
+                                pauseAndShowFirstFrame()
+                            }
+                            if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
+                                play()
+                            }
+                        }
+
+                        onShouldPlayChanged: {
+                            if (visible && backdropWindow.wallpaperIsVideo) {
+                                if (shouldPlay) play()
+                                else pauseAndShowFirstFrame()
+                            }
+                        }
+
+                        onVisibleChanged: {
+                            if (visible && backdropWindow.wallpaperIsVideo) {
+                                if (shouldPlay) play()
+                                else pauseAndShowFirstFrame()
+                            } else {
+                                pause()
+                            }
+                        }
+
+                        layer.enabled: Appearance.effectsEnabled && backdropWindow.enableAnimatedBlur && backdropWindow.backdropBlurRadius > 0
+                        layer.effect: MultiEffect {
+                            blurEnabled: true
+                            blur: (backdropWindow.backdropBlurRadius * Math.max(0, Math.min(1, backdropWindow.thumbnailBlurStrength / 100))) / 100.0
+                            blurMax: 64
+                            saturation: backdropWindow.backdropSaturation
+                            contrast: backdropWindow.backdropContrast
+                        }
                     }
-                    if (playbackState === MediaPlayer.StoppedState && visible && shouldPlay) {
-                        play()
-                    }
-                }
-
-                onShouldPlayChanged: {
-                    if (visible && backdropWindow.wallpaperIsVideo) {
-                        if (shouldPlay) play()
-                        else pauseAndShowFirstFrame()
-                    }
-                }
-
-                onVisibleChanged: {
-                    if (visible && backdropWindow.wallpaperIsVideo) {
-                        if (shouldPlay) play()
-                        else pauseAndShowFirstFrame()
-                    } else {
-                        pause()
-                    }
-                }
-
-                layer.enabled: Appearance.effectsEnabled && backdropWindow.enableAnimatedBlur && backdropWindow.backdropBlurRadius > 0
-                layer.effect: MultiEffect {
-                    blurEnabled: true
-                    blur: (backdropWindow.backdropBlurRadius * Math.max(0, Math.min(1, backdropWindow.thumbnailBlurStrength / 100))) / 100.0
-                    blurMax: 64
-                    saturation: backdropWindow.backdropSaturation
-                    contrast: backdropWindow.backdropContrast
                 }
             }
 
